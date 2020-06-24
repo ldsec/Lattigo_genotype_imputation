@@ -10,7 +10,7 @@ docker build -t epfl_solution .
 docker run -it epfl_solution
 ```
 
-##### Run performance evaluation
+##### Running performance evaluation
 
 In order to obtain the execution times of the system for prediction in the test set, you can run
 
@@ -18,7 +18,7 @@ In order to obtain the execution times of the system for prediction in the test 
 make perf 2>&1 | tee timings.txt
 ```
 
-##### Run Accuracy evaluatoin
+##### Running accuracy evaluation
 
 In order to obtain the AUC (Area Under Curve) figures for the predictions in the test set, you can run 
 ```
@@ -30,7 +30,7 @@ By default, the script obtains the result for regressions of 64 coefficients (63
 ##### Data files
 There files included in the repository are structured in different folders, depending on whether they are used for re-training the used models, or for testing their performance and accuracy:
 
-###### Model Training
+###### Model training
 Under the iDash 2019 Track II scenario, the model training happens offline, in a trusted environment. The python scripts required to rerun the training are in the `training` folder. In order to benchmark the sytem with the available training-test dataset, re-training is not needed.
 
 ###### Prediction/Imputation (test)
