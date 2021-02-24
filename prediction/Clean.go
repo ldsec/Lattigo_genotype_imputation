@@ -7,17 +7,9 @@ import (
 
 // Cleans the temporary files, which includes the keys, encrypted data and results.
 func main() {
-
-	cleanFolder("Keys/")
+	cleanFolder("keys/")
 	cleanFolder("temps/")
-
-	if err := os.Remove("results/ypred.binary"); err != nil {
-		log.Println(err)
-	}
-
-	if err := os.Remove("results/curve.png"); err != nil {
-		log.Println(err)
-	}
+	cleanFolder("results/")
 }
 
 func cleanFolder(folderPath string) {
@@ -27,7 +19,9 @@ func cleanFolder(folderPath string) {
 
 	for i := range files {
 
-		if files[i].Name() != "test.txt"{
+		name := files[i].Name()
+
+		if name != "do_not_remove.txt" && name != "acc.py" && name != "target_list.txt" && name != "transform.py" {
 			if err := os.Remove(folderPath + files[i].Name()); err != nil {
 				log.Println(err)
 			}

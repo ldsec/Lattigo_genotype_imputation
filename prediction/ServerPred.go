@@ -3,10 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/ldsec/idash19_Task2/prediction/lib"
-	"github.com/ldsec/idash19_Task2/prediction/server"
-	"github.com/ldsec/lattigo/ckks"
-	"github.com/ldsec/lattigo/ring"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/lib"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/server"
+	"github.com/ldsec/lattigo/v2/ckks"
+	"github.com/ldsec/lattigo/v2/ring"
+	"github.com/ldsec/lattigo/v2/utils"
 	"log"
 	"math"
 	"os"
@@ -18,13 +19,9 @@ func main() {
 
 	var err error
 
-	// ****************** fixed numbers ****************
-
-	nbrTagSnps := 16184
-
 	// **************************** parse arguments ****************************
 
-	var windowSize, nbrGoRoutines, nbrTargetSnpsInBatch, nbrTargetSnps, DimPatients int
+	var windowSize, nbrGoRoutines, nbrTargetSnpsInBatch, nbrTargetSnps int
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -48,16 +45,7 @@ func main() {
 		panic(err)
 	}
 
-    if DimPatients, err = strconv.Atoi(args[4]); err != nil {
-       panic(err) 
-    }
-
-	log.Println("[Server]: Prediction for nbrTags:", nbrTargetSnps, " with: nbrGoRoutines:", nbrGoRoutines, " and nbrTargetSnpsInBatch:", nbrTargetSnpsInBatch, " and patients:", DimPatients)
-
-
-	params := lib.Params.Params
-
-	params.Gen()
+	log.Println("[Server]: Prediction for nbrTags:", nbrTargetSnps, " with: nbrGoRoutines:", nbrGoRoutines, " and nbrTargetSnpsInBatch:", nbrTargetSnpsInBatch)
 
 	// Retrieves the client encryption params
 	// : dataLen of each ciphertext
@@ -88,9 +76,7 @@ func main() {
 	}
 
 	// contruct slot for reading client encrypted data
-	encryptedPatients := make([]*ckks.Ciphertext, nbrTagSnps) // nbrTagSnps ciphertexts
-
-	//time1 := time.Now()
+	encryptedPatients := make([]*ckks.Ciphertext, lib.NbrTagSnps) // nbrTagSnps ciphertexts
 
 	if fr, err = os.Open(lib.ClientEncDataPath); err != nil {
 		panic(err)
@@ -98,7 +84,7 @@ func main() {
 	defer fr.Close()
 
 	// Unmarchals the part -a * sk + m + e of the ciphertext
-	for tag := 0; tag < nbrTagSnps; tag++ {
+	for tag := 0; tag < lib.NbrTagSnps; tag++ {
 		cipherPool := make([]byte, datalen)
 		fr.Read(cipherPool)
 
@@ -109,22 +95,16 @@ func main() {
 		}
 	}
 
-	//time2 := time.Now()
-	//fmt.Printf("[Server] unmarshaling ciphertext data done in %f s\n", time2.Sub(time1).Seconds())
-	//lib.PrintMemUsage()
-
-	//time1 = time.Now()
-
 	// Reconstruct the 'a' second part of the ciphertext
-	var ringContext *ring.Context
-	if ringContext, err = ring.NewContextWithParams(params.N, params.Qi); err != nil {
+	var ringQ *ring.Ring
+	if ringQ, err = ring.NewRing(1<<lib.LogN, lib.Moduli.Qi); err != nil {
 		panic(err)
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(nbrEncryptorsClient)
 	var start, finish int
-	numberOfBatches, _ := lib.NbrBatchAndLastBatchSize(nbrTagSnps, nbrTagSnpsInBatch)
+	numberOfBatches, _ := lib.NbrBatchAndLastBatchSize(lib.NbrTagSnps, nbrTagSnpsInBatch)
 	batchSize := numberOfBatches / nbrEncryptorsClient
 	for g := 0; g < nbrEncryptorsClient; g++ {
 		start = g * batchSize
@@ -136,18 +116,22 @@ func main() {
 
 		go func(start, finish int, seed []byte) {
 
-			crpGen := ring.NewCRPGenerator(nil, ringContext)
-			crpGen.Seed(seed)
+			prng, err := utils.NewKeyedPRNG(seed)
+			if err != nil {
+				panic(err)
+			}
+
+			crpGen := ring.NewUniformSampler(prng, ringQ)
 
 			for p := start; p < finish; p++ {
 
 				end := (p + 1) * nbrTagSnpsInBatch
 				if p == numberOfBatches-1 {
-					end = nbrTagSnps
+					end = lib.NbrTagSnps
 				}
 
 				for i := p * nbrTagSnpsInBatch; i < end; i++ {
-					encryptedPatients[i].Value()[1] = crpGen.ClockUniformNew()
+					encryptedPatients[i].Value()[1] = crpGen.ReadNew()
 
 				}
 			}
@@ -157,18 +141,12 @@ func main() {
 	}
 	wg.Wait()
 
-	//time2 = time.Now()
-	//fmt.Printf("[Server] ciphertext reconstruction from seed done in %f s\n", time2.Sub(time1).Seconds())
-	//lib.PrintMemUsage()
-
 	// read mapping table
 	MappingList := server.ReadMappingTable(lib.ServerMappingTablePath, nbrGoRoutines)
 
 	// predictions [][][]*ckks.Ciphertext: predictions[p][i][k] batch p, matrixRi, target k (one ciphertext, for all patients)
-	predictionsSave := server.Prediction(DimPatients, windowSize, lib.MatrixRPath(args[0]), MappingList, encryptedPatients, nbrGoRoutines, nbrTargetSnps, nbrTargetSnpsInBatch)
+	predictionsSave := server.Prediction(lib.DimPatients, windowSize, lib.MatrixRPath(args[0]), MappingList, encryptedPatients, nbrGoRoutines, nbrTargetSnps, nbrTargetSnpsInBatch)
 	lib.PrintMemUsage()
-
-	//time3 := time.Now()
 
 	// We need 3 ciphertext to store each SNPtarget, and we pack twice as many values using the imaginary part
 	nbrCiphertexts := nbrTargetSnps
@@ -200,7 +178,7 @@ func main() {
 		for number := 0; number < nbrFiles; number++ {
 
 			var fpRes *os.File
-			if fpRes, err = os.Create(lib.ResDataPath(i, number)); err != nil {
+			if fpRes, err = os.Create(lib.ResDataPath(i, number)); err != nil { // creates a file indexed by i and number
 				panic(err)
 			}
 
@@ -209,8 +187,8 @@ func main() {
 			start := number * nbrCiphertextsInFile
 			finish := lib.Min((number+1)*nbrCiphertextsInFile, nbrCiphertexts)
 
-			binary.Write(bufRes, binary.LittleEndian, uint64(finish-start))
-			binary.Write(bufRes, binary.LittleEndian, dataLen)
+			binary.Write(bufRes, binary.LittleEndian, uint64(finish-start)) // number of ciphertexts in the file
+			binary.Write(bufRes, binary.LittleEndian, dataLen)              // len of each ciphertext
 			fpRes.Write(bufRes.Bytes())
 
 			for idx := start; idx < finish; idx++ {

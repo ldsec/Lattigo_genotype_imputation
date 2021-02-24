@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/ldsec/idash19_Task2/prediction/lib"
-	"github.com/ldsec/lattigo/ckks"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/lib"
+	"github.com/ldsec/lattigo/v2/ckks"
 	"os"
 	"time"
 )
@@ -12,12 +12,14 @@ func main() {
 	var err error
 
 	time1 := time.Now()
-	params := lib.Params.Params
 
-	params.Gen()
+	var params *ckks.Parameters
+	if params, err = ckks.NewParametersFromModuli(lib.LogN, &lib.Moduli); err != nil {
+		panic(err)
+	}
 
-	kgen := ckks.NewKeyGenerator(&params)
-	sk := kgen.GenSecretKeyGaussian(params.Sigma)
+	kgen := ckks.NewKeyGenerator(params)
+	sk := kgen.GenSecretKeyGaussian()
 
 	lib.PrintMemUsage()
 	time2 := time.Now()
@@ -37,7 +39,4 @@ func main() {
 	}
 
 	fwSk.Write(b)
-
-	//time3 := time.Now()
-	//fmt.Printf("[Key Generation] key generation and saving done %f s\n", time3.Sub(time1).Seconds())
 }

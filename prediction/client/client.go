@@ -2,8 +2,8 @@ package client
 
 import (
 	"fmt"
-	"github.com/ldsec/idash19_Task2/prediction/lib"
-	"github.com/ldsec/lattigo/ckks"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/lib"
+	"github.com/ldsec/lattigo/v2/ckks"
 	"math"
 	"os"
 	"sync"
@@ -21,12 +21,6 @@ type Client struct {
 
 	// Keys
 	sk *ckks.SecretKey
-
-	// Number of patients
-	DimPatients int
-
-	// Query (ID: 8 or 9 digit number indicating position on chromosome)
-	//TargetIDList []int64
 }
 
 // InitiateClient populates the Client struct with the scheme parameters, keys and other parameters
@@ -35,13 +29,13 @@ func (c *Client) InitiateClient(refDataPath string, nbrGoRoutines int) {
 
 	var err error
 
-	params := lib.Params.Params
-
 	c.nbrGoRoutines = nbrGoRoutines
 
-	params.Gen()
+	if c.params, err = ckks.NewParametersFromModuli(lib.LogN, &lib.Moduli); err != nil {
+		panic(err)
+	}
 
-	c.params = params.Copy()
+	c.params.SetScale(lib.CiphertextScale)
 
 	// read sk
 	frSk, _ := os.Open("Keys/SecretKey.binary")
@@ -59,30 +53,22 @@ func (c *Client) InitiateClient(refDataPath string, nbrGoRoutines int) {
 	if err = c.sk.UnmarshalBinary(bufReadSk); err != nil {
 		panic(err)
 	}
-
-	// get patients number to be imputed
-	c.DimPatients = lib.GetPatientsNumber(refDataPath)
 }
 
 // ClientPreprocessEncryption processes the data and encrypts it into the correct format.
-func (c *Client) ClientPreprocessEncryption(refDataPath, frequPath string, nbrTagSnps, nbrTagSnpsInBatch int) (encryptedPatientsBatches [][]*ckks.Ciphertext, seeds [][]byte) {
+func (c *Client) ClientPreprocessEncryption(refDataPath string, nbrTagSnps, nbrTagSnpsInBatch int) (encryptedPatientsBatches [][]*ckks.Ciphertext, seeds [][]byte) {
 
 	// batch parameters :
 	numberOfBatches, lastBatchSize := lib.NbrBatchAndLastBatchSize(nbrTagSnps, nbrTagSnpsInBatch)
 
-
 	// Preprocessing ********************************************************************************
 
-	// read patients data
-
 	// matrixP: 16184 rows (tag SNPs), 1004 columns (patients)
-	matrixP := ReadPatientMatrix(refDataPath, frequPath, c.DimPatients, c.nbrGoRoutines)
-
+	matrixP := ReadPatientMatrix(refDataPath, lib.DimPatients, c.nbrGoRoutines)
 
 	// prepare arrays for encryption
 	// pvalue[p] is a matrix for batch p, each row is target k in batch p for all patients
 	pvalue := make([][][]float64, numberOfBatches)
-
 
 	// Instantiates the encryptors that will be used by the Go routines
 	// Also extracts the seeds used for the uniform polynomials PRNG
@@ -91,7 +77,7 @@ func (c *Client) ClientPreprocessEncryption(refDataPath, frequPath string, nbrTa
 	for i := range encryptors {
 		encryptors[i] = c.NewEncryptor()
 		seeds[i] = make([]byte, 64)
-		copy(seeds[i], encryptors[i].crpGen.GetSeed())
+		copy(seeds[i], encryptors[i].seedUniformSampler)
 	}
 
 	// Puts the data into an appropriate format for the encryption
@@ -118,7 +104,7 @@ func (c *Client) ClientPreprocessEncryption(refDataPath, frequPath string, nbrTa
 				}
 
 				// pvalue[p] is a matrix for batch p, each row is target k in batch p for all patients
-				pvalue[p] = encryptor.PreprocessData(matrixP, nbr, c.DimPatients, p)
+				pvalue[p] = encryptor.PreprocessData(matrixP, nbr, lib.DimPatients, p)
 			}
 
 			wg.Done()
@@ -173,7 +159,6 @@ func (c *Client) ClientPreprocessEncryption(refDataPath, frequPath string, nbrTa
 // predictions[p][i][k]: batch p, coefficient Matrix i, target position k in batch p
 func (c *Client) ClientDecryption(predictions [][]*ckks.Ciphertext, nbrTargetSnps, nbrCiphertextInBatch int) (predResAllPatients [][][]float64) {
 
-	nbrPatients := c.DimPatients
 	nbrCiphertexts := len(predictions[0])
 
 	time1 := time.Now()
@@ -204,7 +189,7 @@ func (c *Client) ClientDecryption(predictions [][]*ckks.Ciphertext, nbrTargetSnp
 
 				// target k and k+1 are stored in one complex number as [k + i*(k+1)]
 				for j := start; j < finish; j++ {
-					predicDec[i][j] = decryptor.Decrypt(nbrPatients, predictions[i][j])
+					predicDec[i][j] = decryptor.Decrypt(lib.DimPatients, predictions[i][j])
 				}
 
 				wg.Done()
@@ -214,7 +199,7 @@ func (c *Client) ClientDecryption(predictions [][]*ckks.Ciphertext, nbrTargetSnp
 		wg.Wait()
 	}
 
-
+	//log.Println("Check predicDec:", len(predicDec[0][0])) // should be 1004
 
 	time2 := time.Now()
 	fmt.Printf("[Client] decryption done in %f s\n", time2.Sub(time1).Seconds())
@@ -240,10 +225,7 @@ func (c *Client) ClientDecryption(predictions [][]*ckks.Ciphertext, nbrTargetSnp
 		predResAllPatients[0][k] = componentWiseDivide(predicDec[0][k], tmpVector)
 		predResAllPatients[1][k] = componentWiseDivide(predicDec[1][k], tmpVector)
 		predResAllPatients[2][k] = componentWiseDivide(predicDec[2][k], tmpVector)
-    }
-
-	//time3 := time.Now()
-	//log.Printf("[Client] normalization done in %f s", time3.Sub(time2).Seconds())
+	}
 
 	return
 }

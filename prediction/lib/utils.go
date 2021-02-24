@@ -5,8 +5,8 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/ldsec/lattigo/ckks"
-	"github.com/ldsec/lattigo/ring"
+	"github.com/ldsec/lattigo/v2/ckks"
+	"github.com/ldsec/lattigo/v2/ring"
 	"io"
 	"log"
 	"math"
@@ -70,16 +70,14 @@ func PrintMemUsage() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	fmt.Printf("Memory Usage Stats: Current = %v MiB, ", bToMb(m.Alloc))
-	//	fmt.Printf("Total = %v MiB, ", bToMb(m.TotalAlloc))
 	fmt.Printf("Peak = %v MiB\n", bToMb(m.Sys))
-	//	fmt.Printf("\tNumGC = %v\n", m.NumGC)
-
 }
 
 func bToMb(b uint64) uint64 {
 	return b / 1024 / 1024
 }
 
+// Min returns the smallest value between to integers
 func Min(x, y int) int {
 	if x < y {
 		return x
@@ -87,6 +85,8 @@ func Min(x, y int) int {
 	return y
 }
 
+// GetCiphertextDataLen returns the expected size of a ciphertext in bytes if marshaled
+// Set WithMetaData to true if the metadata must be included
 func GetCiphertextDataLen(ciphertext *ckks.Ciphertext, WithMetaData bool) (dataLen uint64) {
 	if WithMetaData {
 		dataLen += 11
@@ -99,6 +99,9 @@ func GetCiphertextDataLen(ciphertext *ckks.Ciphertext, WithMetaData bool) (dataL
 	return dataLen
 }
 
+// MarshalBinaryCiphertext32 marshals the input ciphertext on the provided slice of bytes
+// Returns an error if the target slice of bytes is too small
+// Use GetCiphertextDataLen(ciphertext, true) to get the correct size in bytes
 func MarshalBinaryCiphertext32(ciphertext *ckks.Ciphertext, data []byte) (err error) {
 
 	data[0] = uint8(ciphertext.Degree() + 1)
@@ -125,6 +128,7 @@ func MarshalBinaryCiphertext32(ciphertext *ckks.Ciphertext, data []byte) (err er
 	return nil
 }
 
+// UnmarshalBinaryCiphertext32 unmarshals the provided bytes on the input ciphertext
 func UnmarshalBinaryCiphertext32(ciphertext *ckks.Ciphertext, data []byte) (err error) {
 	if len(data) < 11 {
 		return errors.New("too small bytearray")
@@ -140,7 +144,7 @@ func UnmarshalBinaryCiphertext32(ciphertext *ckks.Ciphertext, data []byte) (err 
 	pointer = 11
 
 	for i := range ciphertext.Value() {
-        pointer += DecodeCoeffs32(ciphertext.Value()[i].Coeffs, data[pointer:])
+		pointer += DecodeCoeffs32(ciphertext.Value()[i].Coeffs, data[pointer:])
 	}
 
 	if pointer != uint64(len(data)) {
@@ -150,6 +154,9 @@ func UnmarshalBinaryCiphertext32(ciphertext *ckks.Ciphertext, data []byte) (err 
 	return nil
 }
 
+// GetCiphertextDataLenSeeded returns the expected size in bytes of a ciphertext that was generated
+// by a seeded encryption (the uniform polynomial a of [-as + m + e, a] is generated deterministically)
+// In this case, the degree 1 element of the ciphertext (the element a) does not need to be stored
 func GetCiphertextDataLenSeeded(ciphertext *ckks.Ciphertext, WithMetaData bool) (dataLen uint64) {
 	if WithMetaData {
 		dataLen += 11
@@ -160,6 +167,9 @@ func GetCiphertextDataLenSeeded(ciphertext *ckks.Ciphertext, WithMetaData bool) 
 	return dataLen
 }
 
+// MarshalBinaryCiphertextSeeded32 only marshals the degree zero element of the inpu ciphertext on the provided slice of bytes
+// Returns an error if the target slice of bytes is too small
+// Use GetCiphertextDataLenSeeded(ciphertext, true) to get the correct size in bytes
 func MarshalBinaryCiphertextSeeded32(ciphertext *ckks.Ciphertext, data []byte) (err error) {
 
 	// Degree will be read as the mask is not included during the encryption
@@ -184,12 +194,15 @@ func MarshalBinaryCiphertextSeeded32(ciphertext *ckks.Ciphertext, data []byte) (
 	return nil
 }
 
+// UnmarshalBinaryCiphertextSeeded32 unmarshals the provided bytes on the input ciphertext
+// Only the degree zero element is recovered, the degree 1 element needs to be reconstructed
+// from the seed
 func UnmarshalBinaryCiphertextSeeded32(ciphertext *ckks.Ciphertext, data []byte) (err error) {
 	if len(data) < 11 {
 		return errors.New("too small bytearray")
 	}
 
-	ciphertext.CkksElement = new(ckks.CkksElement)
+	ciphertext.Element = new(ckks.Element)
 
 	ciphertext.SetValue(make([]*ring.Poly, uint8(data[0])))
 
@@ -215,7 +228,7 @@ func UnmarshalBinaryCiphertextSeeded32(ciphertext *ckks.Ciphertext, data []byte)
 	return nil
 }
 
-// DecodeCoeffsNew converts a byte array to a matrix of coefficients.
+// DecodeCoeffs32 converts a byte array to a matrix of coefficients.
 func DecodeCoeffs32(coeffs [][]uint64, data []byte) (pointer uint64) {
 
 	N := uint64(1 << data[0])

@@ -2,18 +2,14 @@ package main
 
 import (
 	"encoding/binary"
-	"github.com/ldsec/idash19_Task2/prediction/client"
-	"github.com/ldsec/idash19_Task2/prediction/lib"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/client"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/lib"
 	"log"
 	"os"
 	"strconv"
 )
 
 func main() {
-	// **************************** fixed numbers ****************************
-
-	// total number of tag SNPs
-	nbrTagSnps := 16184 //TODO can be flexible later
 
 	// **************************** parse arguments ****************************
 	var err error
@@ -40,9 +36,8 @@ func main() {
 	}
 
 	// calculate patient numbers from client files
-	DimPatients := lib.GetPatientsNumber(refDataPath)
+	//DimPatients := lib.GetPatientsNumber(refDataPath)
 
-	log.Printf("[Client] patients number: %v\n", DimPatients)
 	log.Println("[Client]: Encryption with: nbrGoRoutines:", nbrGoRoutines, " and batchSize:", nbrTagSnpsInBatch)
 
 	// **************************** initiate client ****************************
@@ -59,12 +54,11 @@ func main() {
 	// This relaxes the memory footprint of the client encrypted data and the data to be sent by half as
 	// only (-a * sk + m + e) parts of the ciphertext need to be stored and sent to the server (along long with the seed).
 	// The server can then reconstruct 'a' from the seed.
-	encryptedPatientsBatches, seeds := client.ClientPreprocessEncryption(refDataPath, lib.FreqDataPath, nbrTagSnps, nbrTagSnpsInBatch)
+	encryptedPatientsBatches, seeds := client.ClientPreprocessEncryption(refDataPath, lib.NbrTagSnps, nbrTagSnpsInBatch)
 
 	// **************************** write encrypted data ***************************
 
 	lib.PrintMemUsage()
-	// time1 := time.Now()
 
 	tmp := make([]byte, 8)
 
@@ -96,9 +90,6 @@ func main() {
 	fw.Close()
 
 	// Creates the files containing the compressed ciphertexts
-	//numberOfBatches, _ := lib.NbrBatchAndLastBatchSize(nbrTagSnps, nbrTagSnpsInBatch)
-	//log.Println("nbrBatches:", numberOfBatches)
-
 	if fw, err = os.Create(lib.ClientEncDataPath); err != nil {
 		panic(err)
 	}
@@ -116,8 +107,4 @@ func main() {
 			fw.Write(b)
 		}
 	}
-
-	//time2 := time.Now()
-	//fmt.Printf("[Client] writing encrypted data done in %f s\n", time2.Sub(time1).Seconds())
-	//lib.PrintMemUsage()
 }

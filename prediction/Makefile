@@ -32,7 +32,9 @@ run:
 	./ClientEnc ${REFDATAPATH} ${ENCGOROUTINES} ${ENCBATCHSIZE}
 	./ServerPred ${WINDOW} ${PREDGOROUTINES} ${PREDBATCHSIZE} ${NBRTARGETSNPS} ${NBRPATIENTS} ${POPTYPE}
 	./ClientDec ${REFDATAPATH} ${DECGOROUTINES} ${DECBATCHSIZE}
-	#python3 results/evaluation.py -i results/ypred.binary -t prediction_data/original_data/answer_targets_80882.txt -o results/curve
+	cd results
+	python3 transform.py -i ypred.binary -t ../prediction_data/original_data/answer_targets_${NBRTARGETSNPS}.txt -o curve -c window${WINDOW} -p 1004
+	cd ..
 
 clean:
 	${GOBUILD} Clean.go

@@ -1,5 +1,5 @@
-module github.com/ldsec/idash19_Task2
+module github.com/ldsec/Lattigo_genotype_imputation
 
-go 1.13
+go 1.15
 
-require github.com/ldsec/lattigo v1.3.1-0.20200418185752-bc71c5c1d6a1
+require github.com/ldsec/lattigo/v2 v2.1.1

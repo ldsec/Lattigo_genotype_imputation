@@ -3,8 +3,9 @@ package client
 import (
 	"crypto/rand"
 	"encoding/csv"
-	"github.com/ldsec/lattigo/ckks"
-	"github.com/ldsec/lattigo/ring"
+	"github.com/ldsec/lattigo/v2/ckks"
+	"github.com/ldsec/lattigo/v2/ring"
+	"github.com/ldsec/lattigo/v2/utils"
 	"io"
 	"log"
 	"os"
@@ -16,59 +17,37 @@ import (
 var err error
 
 // ReadPatientMatrix reads the patient matrix and processes it.
+// TODO: change targetPath to hardcoded data path
+// TODO: unify var name format
 // In real test, refPath is the path of idash reserved file.
-func ReadPatientMatrix(refDataPath, frequPath string, nbrPatients, nbrGoRoutines int) (metaArrayP [][]float64) {
+func ReadPatientMatrix(refDataPath string, nbrPatients, nbrGoRoutines int) (metaArrayP [][]float64) {
 
 	var wg sync.WaitGroup
-	wg.Add(2)
-	metafreqlist := []string{}
+
 	metaMatrixP := []string{}
-	go func() {
 
-		metafreq, _ := os.Open(frequPath) // "../pack2_dataset/frequency10k.csv"
-
-		r := csv.NewReader(metafreq)
-		for {
-			record, err := r.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				panic(err)
-			}
-
-			metafreqlist = append(metafreqlist, record[0])
+	/* NEW VERSION: Read in original patient matrix directly, save in metaArrayP */
+	// TODO: not sure if there will be memory problem for (80000+ SNPs, 1000+ patients)
+	metadataP, err := os.Open(refDataPath)
+	if err != nil {
+		log.Println("Data path is wrong: reading failed")
+	}
+	r := csv.NewReader(metadataP)
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
 		}
-		wg.Done()
-	}()
-
-	go func() {
-		/* NEW VERSION: Read in original patient matrix directly, save in metaArrayP */
-		// TODO: not sure if there will be memory problem for (80000+ SNPs, 1000+ patients)
-		metadataP, err := os.Open(refDataPath)
 		if err != nil {
-			log.Println("Data path is wrong: reading failed")
+			panic(err)
 		}
-		r := csv.NewReader(metadataP)
-		for {
-			record, err := r.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				panic(err)
-			}
 
-			metaMatrixP = append(metaMatrixP, record[0])
-		}
-		wg.Done()
-	}()
-	wg.Wait()
+		metaMatrixP = append(metaMatrixP, record[0])
+	}
 
 	// store pure data of all patients and all observed positions
 	// Note: metaArrayP is just reading data part, no transformation
 	// metaArrayP: row --- ref positions, col --- patients
-
 	nbrRefPositions := len(metaMatrixP)
 	metaArrayP = make([][]float64, nbrRefPositions)
 	for i := range metaArrayP {
@@ -105,13 +84,7 @@ func ReadPatientMatrix(refDataPath, frequPath string, nbrPatients, nbrGoRoutines
 					} else if i < 4 { // jump over chromosome, start position, end position, ID.
 						continue
 					} else if tmp, err := strconv.ParseFloat(strarray[i], 64); err == nil {
-						// if NaN in ref data
-						if tmp != 0 && tmp != 1 && tmp != 2 {
-							log.Println("Substitute NaN value...")
-							metaArrayP[idx][i-4], _ = strconv.ParseFloat(metafreqlist[0], 64) //metafreqlist[idx]
-						} else {
-							metaArrayP[idx][i-4] = tmp
-						}
+						metaArrayP[idx][i-4] = tmp
 					}
 				}
 			}
@@ -128,14 +101,15 @@ func ReadPatientMatrix(refDataPath, frequPath string, nbrPatients, nbrGoRoutines
 
 // Encryptor is a struct storing the necessary objects and data to encode the patient data on a plaintext and and encrypt it.
 type Encryptor struct {
-	params      *ckks.Parameters
-	sk          *ring.Poly
-	ringContext *ring.Context
-	encoder     ckks.Encoder
-	tmpPt       *ckks.Plaintext
-	crpGen      *ring.CRPGenerator
-	gauGen      *ring.CRPGenerator
-	polypool    *ring.Poly
+	params             *ckks.Parameters
+	sk                 *ring.Poly
+	ringQ              *ring.Ring
+	encoder            ckks.Encoder
+	tmpPt              *ckks.Plaintext
+	crpGen             *ring.UniformSampler
+	gauGen             *ring.GaussianSampler
+	seedUniformSampler []byte
+	polypool           *ring.Poly
 }
 
 // NewEncryptor creates a new Encryptor which is thread safe.
@@ -146,35 +120,37 @@ func (c *Client) NewEncryptor() (enc *Encryptor) {
 
 	enc.sk = c.sk.Get().CopyNew()
 
-	if enc.ringContext, err = ring.NewContextWithParams(c.params.N, c.params.Qi); err != nil {
+	if enc.ringQ, err = ring.NewRing(c.params.N(), c.params.Qi()); err != nil {
 		panic(err)
 	}
 
-	enc.crpGen = ring.NewCRPGenerator(nil, enc.ringContext)
+	enc.seedUniformSampler = make([]byte, 64)
+	if _, err := rand.Read(enc.seedUniformSampler); err != nil {
+		panic("crypto rand error")
+	}
+
+	prngUniform, err := utils.NewKeyedPRNG(enc.seedUniformSampler)
+	if err != nil {
+		panic(err)
+	}
 
 	bytes := make([]byte, 64)
 	if _, err := rand.Read(bytes); err != nil {
 		panic("crypto rand error")
 	}
 
-	enc.crpGen.Seed(bytes)
-
-	if _, err := rand.Read(bytes); err != nil {
-		panic("crypto rand error")
+	prngGaussian, err := utils.NewKeyedPRNG(bytes)
+	if err != nil {
+		panic(err)
 	}
 
-	enc.gauGen = ring.NewCRPGenerator(bytes, enc.ringContext)
+	enc.crpGen = ring.NewUniformSampler(prngUniform, enc.ringQ)
+	enc.gauGen = ring.NewGaussianSampler(prngGaussian, enc.ringQ, ckks.DefaultSigma, 19)
 
-	if _, err := rand.Read(bytes); err != nil {
-		panic("crypto rand error")
-	}
-
-	enc.gauGen.Seed(bytes)
-
-	enc.polypool = enc.ringContext.NewPoly()
+	enc.polypool = enc.ringQ.NewPoly()
 
 	enc.encoder = ckks.NewEncoder(c.params)
-	enc.tmpPt = ckks.NewPlaintext(c.params, c.params.MaxLevel, c.params.Scale)
+	enc.tmpPt = ckks.NewPlaintext(c.params, c.params.MaxLevel(), c.params.Scale())
 
 	return
 }
@@ -194,32 +170,30 @@ func (enc *Encryptor) Encrypt(valueArray [][]float64, nbrTagSnpsInBatch int) (ci
 		enc.encoder.EncodeCoeffs(valueArray[tag], enc.tmpPt)
 
 		// Creates a ciphertext of degree 0 (only the first element needs to be stored as the second element is generated from a seed)
-		tmpCt = &ckks.Ciphertext{&ckks.CkksElement{}}
-		tmpCt.SetScale(enc.params.Scale)
+		tmpCt = &ckks.Ciphertext{Element: &ckks.Element{}}
+		tmpCt.SetScale(enc.params.Scale())
 		tmpCt.SetValue(make([]*ring.Poly, 1))
-		tmpCt.Value()[0] = enc.ringContext.NewPoly()
+		tmpCt.Value()[0] = enc.ringQ.NewPoly()
 
 		// Encrypts the plaintext on the ciphertext :
-		// ct1 = a
+		// ct1 = a (generated from the PRNG, only the seed of the PRNG is stored)
 		// ct0 = -a * sk + e + m
 
-		// samples a
-		enc.crpGen.ClockUniform(enc.polypool)
+		// samples NTT(a)
+		enc.crpGen.Read(enc.polypool)
 
-		// comptues -a*sk
-		enc.ringContext.MulCoeffsMontgomeryAndSub(enc.polypool, enc.sk, tmpCt.Value()[0])
+		// comptues NTT(-a*sk)
+		enc.ringQ.MulCoeffsMontgomeryAndSub(enc.polypool, enc.sk, tmpCt.Value()[0])
 
 		// computes e + m
 		// V1 (uses threadsafe PRNG for gaussian sampling):
-		enc.gauGen.ClockGaussianAndAdd(enc.tmpPt.Value()[0], enc.params.Sigma, uint64(6*enc.params.Sigma))
+		enc.gauGen.ReadAndAdd(enc.tmpPt.Value()[0])
 
-		// V1' (uses os.urandom reads for gaussian sampling) :
-		//enc.ringContext.SampleGaussianAndAddLvl(enc.tmpPt.Level(), enc.tmpPt.Value()[0], enc.params.Sigma, uint64(6*enc.params.Sigma))
+		// NTT(e+m)
+		enc.ringQ.NTT(enc.tmpPt.Value()[0], enc.tmpPt.Value()[0])
 
-		enc.ringContext.NTT(enc.tmpPt.Value()[0], enc.tmpPt.Value()[0])
-
-		// computes -a *sk + e + m
-		enc.ringContext.Add(tmpCt.Value()[0], enc.tmpPt.Value()[0], tmpCt.Value()[0])
+		// computes NTT(-a *sk) + NTT(e + m)
+		enc.ringQ.Add(tmpCt.Value()[0], enc.tmpPt.Value()[0], tmpCt.Value()[0])
 
 		ciphertexts[tag] = tmpCt
 	}
@@ -235,7 +209,7 @@ func (enc *Encryptor) PreprocessData(metaArrayP [][]float64, currentBatchSize, n
 
 	// read each batch in valueArray, each row of valueArray is a ciphertext of one tag position for 1004 patients
 	for i := range valueArray {
-		valueArray[i] = make([]float64, enc.params.N)
+		valueArray[i] = make([]float64, enc.params.N())
 		for j := 0; j < nbrPatients; j++ {
 			valueArray[i][j] = 1.0 + metaArrayP[batchIndex*currentBatchSize+i][j] // remember to + 1
 		}
