@@ -1,5 +1,5 @@
 ### Homomorphically Encrypted Outsourced Genotype Imputation with Lattigo
-This repository hosts the code for the solution submitted by the EPFL-LDS team (https://ldsec.epfl.ch) to iDash 2019 track II (https://humangenomeprivacy.org/2019), evolved and improved for the article "Secure and Practical Genotype Imputation Methods via Homomorphic Encryption". The code implements a secure genotype imputation service built on top of the Lattigo lattice-based homomorphic encryption library (https://lattigo.epfl.ch), developed by LDS.
+This repository hosts the code for the solution submitted by the EPFL-LDS team (https://lds.epfl.ch) to iDash 2019 track II (https://humangenomeprivacy.org/2019), evolved and improved for the article "Secure and Practical Genotype Imputation Methods via Homomorphic Encryption". The code implements a secure genotype imputation service built on top of the Lattigo lattice-based homomorphic encryption library (https://lattigo.epfl.ch), developed by LDS.
 
 Instructions follow below for building the docker and reproducing the timings and performancd figures shown in the aforementioned paper.
 
