@@ -16,7 +16,7 @@ make enc REFDATAPATH=prediction_data/original_data/tag_testing_trimed.txt NBRGOR
 make pred WINDOW=${w} NBRGOROUTINES=2 BATCHSIZE=40441 NBRTARGETSNPS=$nbrTargets NBRPATIENTS=$nbrAll POPTYPE=ALL
 make dec REFDATAPATH=prediction_data/original_data/tag_testing_trimed.txt NBRGOROUTINES=2 BATCHSIZE=40441 NBRTARGETSNPS=$nbrTargets
 cd results
-python3 transform.py -i ypred.binary -t ../prediction_data/original_data/answer_targets_80882.txt -c ALL_window$w -o curve -p $nbrAll
+python transform.py -i ypred.binary -t ../prediction_data/original_data/answer_targets_80882.txt -c ALL_window$w -o curve -p $nbrAll
 cd ..
 
 echo "- Population Stratification -"

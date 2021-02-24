@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/ldsec/idash19_Task2/prediction/lib"
-	"github.com/ldsec/lattigo/ckks"
+	"github.com/ldsec/Lattigo_genotype_imputation/prediction/lib"
+	"github.com/ldsec/lattigo/v2/ckks"
 	"log"
 	"math"
 	"sync"
@@ -12,22 +12,15 @@ import (
 // Prediction evaluates the model on the client data.
 func Prediction(nbrPatients, windowSize int, matrixRPath string, MappingList []int64, encryptedPatients []*ckks.Ciphertext, nbrGoroutines, nbrTargetSnps, nbrTargetSnpsInBatch int) (predictionsSave [][]*ckks.Ciphertext) {
 
-	modelParams := &lib.Params
-	modelParams.Gen()
-
 	// batch parameters (parallel on target positions)
 	numberOfBatches, lastBatchSize := lib.NbrBatchAndLastBatchSize(nbrTargetSnps, nbrTargetSnpsInBatch)
 	log.Print("[Server] number of batches: ", numberOfBatches, " and last batch size ", lastBatchSize)
-
-	//time1 := time.Now()
 
 	// get matrix R
 	// MatrixRs: original form, no transformation
 	MatrixRs := ReadCoefficients(windowSize, matrixRPath, len(lib.MatrixNames), nbrTargetSnps, nbrGoroutines)
 
 	time2 := time.Now()
-	//log.Printf("[Server] read model done in %f s\n", time2.Sub(time1).Seconds())
-	//lib.PrintMemUsage()
 
 	// prediction *********************
 
@@ -50,7 +43,7 @@ func Prediction(nbrPatients, windowSize int, matrixRPath string, MappingList []i
 		}
 
 		go func(start, finish, ng int) {
-			predictor := NewPredictor(modelParams)
+			predictor := NewPredictor()
 
 			var predTime time.Duration
 			var mappingList []int64
@@ -122,7 +115,6 @@ func Prediction(nbrPatients, windowSize int, matrixRPath string, MappingList []i
 
 	predictionAverage := float64(sumPred.Seconds()) / float64(nbrGoroutines)
 
-	//log.Println("PREDICTION ALL ", predictionTimings)
 	log.Println("PREDICTION AVG ", predictionAverage, " AND MAX ", maxPrediction)
 
 	time3 := time.Now()

@@ -72,7 +72,7 @@ Results are saved in the `prediction/results` subfolder.
     - NBRPATIENTS and POPTYPE should be consistent with the used dataset (e.g., 1004 for ALL; 272 for AFR; 135 for AMR; 210 for EUR)
 
   ```
-  python3 transform.py -i ypred.binary -t ../prediction_data/original_data/answer_targets_80882.txt -o curve -c window16 -p 1004
+  python3 results/transform.py -i results/ypred.binary -t prediction_data/original_data/answer_targets_80882.txt -o results/curve -c window16 -p 1004
   ```
 
   - The arguments of the transform.py script are the following: 
